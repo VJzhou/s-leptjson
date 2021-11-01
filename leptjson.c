@@ -30,12 +30,12 @@ typedef struct {
 static void* lept_context_push(lept_context* c, size_t size) {
     void* ret;
     assert(size > 0);
-    if (c->top + size >= c->size) {
+    if (c->top + size >= c->size) { //
         if (c->size == 0)
             c->size = LEPT_PARSE_STACK_INIT_SIZE;
         while (c->top + size >= c->size)
             c->size += c->size >> 1; // 扩容1.5 倍
-        c->stack = (char*)realloc(c->stack, c->size);
+        c->stack = (char*)realloc(c->stack, c->size); // 重新调整size个大小空间
     }
 
     ret = c->stack + c->top;
@@ -148,14 +148,14 @@ static int lept_parse_string (lept_context* c, lept_value* v) {
         switch (ch) {
             case '\\':
                 switch (*p++) {
-                    case '\\':  PUTC(c, '\\');break;
-                    case '\"':  PUTC(c, '\"');break;
-                    case 'n':  PUTC(c, '\n');break;
-                    case 't':  PUTC(c, '\t');break;
-                    case 'r':  PUTC(c, '\r');break;
-                    case 'b':  PUTC(c, '\b');break;
-                    case 'f':  PUTC(c, '\f');break;
-                    case '/':  PUTC(c, '/');break;
+                    case '\"': PUTC(c, '\"'); break;
+                    case '\\': PUTC(c, '\\'); break;
+                    case '/':  PUTC(c, '/' ); break;
+                    case 'b':  PUTC(c, '\b'); break;
+                    case 'f':  PUTC(c, '\f'); break;
+                    case 'n':  PUTC(c, '\n'); break;
+                    case 'r':  PUTC(c, '\r'); break;
+                    case 't':  PUTC(c, '\t'); break;
                     case 'u':
                         if (!(p = lept_parse_hex4(p, &u))) { // 解析4位16进制数字 \u2020
                             STRING_ERROR(LEPT_PARSE_INVALID_UNICODE_HEX); // 解析失败返回解析错误
@@ -163,7 +163,7 @@ static int lept_parse_string (lept_context* c, lept_value* v) {
                         // 高代理  U+D800 至 U+DBFF     低代理 U+DC00 至 U+DFFF
                         // 检查是否存在低代理 || 低代理不在合法码点范围
                         // 计算码点
-                        if (u >= 0xD800 && u <= 0xD8FF) {
+                        if (u >= 0xD800 && u <= 0xDBFF) {
                             if (*p++ != '\\') {
                                 STRING_ERROR(LEPT_PARSE_INVALID_UNICODE_SURROGATE);
                             }
@@ -203,6 +203,7 @@ static int lept_parse_array (lept_context* c, lept_value* v) {
     size_t size = 0;
     int ret;
     EXPECT(c, '[');
+    lept_parse_whitespace(c);
     if (*c->json == ']') {
         v->type = LEPT_ARRAY;
         v->e = NULL;
@@ -213,14 +214,16 @@ static int lept_parse_array (lept_context* c, lept_value* v) {
     for (;;) {
         lept_value e;
         lept_init(&e);
+        lept_parse_whitespace(c);  //在此处去除ws也可
         if ( (ret = lept_parse_value(c, &e)) != LEPT_PARSE_OK) {
-            return ret;
+            break;
         }
-
         memcpy(lept_context_push(c, sizeof(lept_value)), &e, sizeof(lept_value));
         size++;
+        lept_parse_whitespace(c);
         if (*c->json == ',') {
             c->json++;
+//            lept_parse_whitespace(c);
         } else if (*c->json == ']') {
             v->type = LEPT_ARRAY;
             c->json++;
@@ -229,10 +232,15 @@ static int lept_parse_array (lept_context* c, lept_value* v) {
             memcpy(v->e = (lept_value*)malloc(size), lept_context_pop(c, size), size);
             return LEPT_PARSE_OK;
         } else {
-            return LEPT_PARSE_MISS_COMMA_OR_SQUARE_BRACKET;
+            ret = LEPT_PARSE_MISS_COMMA_OR_SQUARE_BRACKET;
+            break;
         }
     }
-
+    // 释放栈空间
+    for (size_t i = 0; i < size; ++i) {
+        lept_free((lept_value*)lept_context_pop(c, sizeof(lept_value)));
+    }
+    return ret;
 }
 
 static int lept_parse_value(lept_context* c, lept_value* v) {
@@ -270,8 +278,19 @@ int lept_parse (lept_value* v, const char* json) {
 
 void lept_free (lept_value* v) {
     assert(v != NULL);
-    if (v->type == LEPT_STRING)
-        free(v->s);
+    size_t i;
+    switch (v->type) {
+        case LEPT_STRING:
+            free(v->s);
+            break;
+        case LEPT_ARRAY:
+            for (i = 0; i < v->size; i++) {
+                lept_free(&v->e[i]);
+            }
+            free(v->e);
+            break;
+        default:;
+    }
     v->type = LEPT_NULL;
 }
 
