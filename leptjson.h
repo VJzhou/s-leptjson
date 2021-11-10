@@ -20,12 +20,12 @@ struct lept_value{
         }; // 占用12 个字节
         struct { // array
             lept_value *e; // 使用了自身类型指针, 需要前置申明
-            size_t  size;
+            size_t  size, capacity;
         };
 
         struct { // object
             lept_member *m;
-            size_t  size;
+            size_t  size, capacity;
         } o;
 
         double n; // 8 字节
@@ -58,7 +58,8 @@ enum {
 
 };
 
-#define lept_init(v) do {(v)->type = LEPT_NULL; } while(0)
+#define lept_init(v) do {(v)->type = LEPT_NULL; (v)->capacity = 0;} while(0)
+#define LEPT_KEY_NOT_EXIST ((size_t) -1)
 
 int lept_parse(lept_value* v, const char* json);
 
@@ -87,4 +88,31 @@ const char* lept_get_object_key(const lept_value* v, size_t index);
 size_t lept_get_object_key_length(const lept_value* v, size_t index);
 lept_value* lept_get_object_value(const lept_value* v, size_t index);
 
+
+void lept_move (lept_value* dst, lept_value* src);
+void lept_swap(lept_value* lhs, lept_value* rhs);
+
+
+void lept_set_array (lept_value* v, size_t capacity);
+size_t lept_get_array_capacity(const lept_value* v);
+lept_value*  lept_pushback_array_element (lept_value* v);
+void lept_popback_array_element (lept_value* v);
+lept_value* lept_insert_array_element(lept_value* v, size_t index);
+void lept_erase_array_element (lept_value* v, size_t index, size_t count);
+void lept_shrink_array (lept_value* v);
+void lept_clear_array(lept_value* v);
+
+int lept_is_equal(const lept_value* lhs, const lept_value* rhs);
+void lept_copy (lept_value* dst, const lept_value* src);
+
+
+void lept_set_object(lept_value* v, size_t capacity);
+size_t lept_get_object_capacity(const lept_value* v);
+void lept_reserve_object(lept_value* v, size_t capacity);
+void lept_shrink_object(lept_value* v);
+void lept_clear_object(lept_value* v);
+lept_value* lept_set_object_value(lept_value* v, const char* key, size_t klen);
+void lept_remove_object_value(lept_value* v, size_t index);
+size_t lept_find_object_index (lept_value* v, const char* key, size_t klen);
+lept_value* lept_find_object_value (lept_value* v, const char* key, size_t klen);
 #endif
